@@ -1,0 +1,43 @@
+{
+  "ticker": "AAPL",
+  "snapshot": {
+    "ticker": "AAPL",
+    "price": 276.97,
+    "day_change_pct": 0.38054064,
+    "market_cap": 4110342684672,
+    "pe_ratio": 37.17718,
+    "eps": 7.45,
+    "currency": "USD"
+  },
+  "technical": {
+    "ticker": "AAPL",
+    "price": 276.9700012207031,
+    "ma_50": 260.8590802001953,
+    "ma_200": null,
+    "trend": null,
+    "rsi_14": 61.56176177331627,
+    "rsi_state": "mixed",
+    "macd": 3.7532449604473186,
+    "macd_signal": 4.014902699848264,
+    "macd_state": "bearish_cross_or_below_signal",
+    "atr": 6.137806405020298,
+    "bb_upper": 276.6266668646611,
+    "bb_lower": 264.8182458550654,
+    "bb_position": "near_or_above_upper_band"
+  },
+  "analysis": {
+    "summary": "Apple Inc. (AAPL) is a leading global technology company known for its innovative consumer electronics, software, and services. It holds a strong position in the market with a very large market capitalization, reflecting its significant scale and influence. The company is generally recognized as a dominant leader in several product categories such as smartphones, tablets, and personal computers. Its brand strength and ecosystem are key competitive advantages.",
+    "valuation_comment": "The P/E ratio of approximately 37.18 suggests the stock is valued at a premium relative to average market levels, indicating potentially rich valuation. With an EPS of 7.45 and a very large market capitalization exceeding $4 trillion, the company\u2019s fundamentals show strong earnings but the valuation multiples imply investors may be pricing in continued growth and strong performance. Overall, valuation appears stretched based on the provided metrics.",
+    "technical_comment": "Technically, the stock price (around 277) is above the 50-day moving average (about 261), suggesting a generally positive short-term trend, but the 200-day moving average data is missing. The RSI at roughly 61.56 is mixed, indicating neither overbought nor oversold conditions. The MACD is slightly bearish with a current bearish cross or being below the signal line, which suggests weakening momentum. The average true range (ATR) shows moderate volatility. The stock is trading near or just above the upper Bollinger Band, typically signaling that the price could be extended in the short term.",
+    "bull_case": "Apple\u2019s position as a market leader with strong earnings and a large market cap supports confidence in its long-term business prospects. Technically, the price trading above the 50-day moving average suggests ongoing underlying strength, and the moderate RSI implies room to run without being overbought. The proximity to the upper Bollinger Band may indicate momentum, appealing to investors anticipating continued upward movement.",
+    "bear_case": "The relatively high P/E ratio signals stretched valuation, raising concerns about downside if growth disappoints. Technically, the bearish MACD crossover and the price near the upper Bollinger Band could suggest an impending pullback or consolidation. The lack of 200-day moving average data limits visibility on long-term trend strength. These factors combined suggest caution as the stock may be vulnerable to corrective pressure.",
+    "risks": [
+      "High valuation sensitivity to growth misses",
+      "Market volatility affecting high multiple stocks",
+      "Competitive pressure from other tech companies",
+      "Supply chain disruptions impacting product availability",
+      "Regulatory risks in key markets"
+    ],
+    "final_rating": "watchlist"
+  }
+}
