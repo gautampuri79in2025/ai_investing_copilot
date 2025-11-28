@@ -162,7 +162,8 @@ def get_latest_ta_summary(
     df["macd_hist"] = macd_df["macd_hist"]
 
     # Drop early rows that don't have enough data for long windows
-    df_clean = df.dropna(subset=["rsi", "sma_50", "macd", "macd_signal"])
+ df_clean = df.dropna(subset=["rsi", "sma_50", "sma_200", "macd", "macd_signal"])
+
 
     if df_clean.empty:
         # not enough data for full TA set, but we can still try with partial
