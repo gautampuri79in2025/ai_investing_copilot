@@ -11,8 +11,27 @@ from src.utils.emailer import send_email
 
 
 # Default tickers for the morning report
-DEFAULT_TICKERS = ["GOOG", "MSFT", "NVDA", "META"]
-
+DEFAULT_TICKERS = [
+    "GOOG",
+    "AMZN",
+    "AAPL",
+    "UBER",
+    "MSFT",
+    "BRK-B",
+    "META",
+    "TSLA",
+    "TSM",
+    "AMD",
+    "AVGO",
+    "INTC",
+    "NVDA",
+    "PANW",
+    "SNOW",
+    "PLTR",
+    "CRM",
+    "SPOT",
+    "NFLX"
+]
 
 def get_market_snapshot(ticker: str) -> Dict[str, Any]:
     """
