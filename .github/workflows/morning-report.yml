@@ -1,20 +1,16 @@
 name: Daily Morning Stock Report
 
 on:
+  workflow_dispatch:  # allow manual runs
   schedule:
-    # Runs every day at 08:00 UTC
-    # Note: UTC != local time. 08:00 UTC is:
-    # - 08:00 in Ireland in winter
-    # - 09:00 in Ireland in summer (DST)
+    # 8:00 AM UTC every day (same as 8:00 in Dublin in winter)
     - cron: "0 8 * * *"
-  workflow_dispatch: {}
 
 jobs:
   morning-report:
     runs-on: ubuntu-latest
 
     env:
-      # These are passed from GitHub Secrets (set them in repo Settings → Secrets and variables → Actions)
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
       EMAIL_TO: ${{ secrets.EMAIL_TO }}
