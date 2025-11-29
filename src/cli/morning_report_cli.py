@@ -142,7 +142,6 @@ def build_email_body(
         detail_lines.append(
             f"Day Change %: {format_number(snapshot.get('day_change_percent'), 2, '%')}"
         )
-        detail_lines.append(f"Market Cap:   {snapshot.get('market_cap')}")
         detail_lines.append(f"P/E Ratio:    {format_number(snapshot.get('pe_ratio'), 2)}")
         detail_lines.append("")
 
