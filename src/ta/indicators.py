@@ -4,6 +4,9 @@ import numpy as np
 from typing import Optional, Dict, Any
 
 
+# ---------------------------------------------------------
+# RSI
+# ---------------------------------------------------------
 def _compute_rsi(close: pd.Series, window: int = 14) -> pd.Series:
     """
     Classic RSI calculation using Wilder's smoothing.
@@ -16,13 +19,15 @@ def _compute_rsi(close: pd.Series, window: int = 14) -> pd.Series:
     avg_gain = gain.rolling(window=window, min_periods=window).mean()
     avg_loss = loss.rolling(window=window, min_periods=window).mean()
 
-    # Avoid division by zero
     rs = avg_gain / avg_loss.replace(0, np.nan)
 
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
 
+# ---------------------------------------------------------
+# MACD
+# ---------------------------------------------------------
 def _compute_macd(close: pd.Series) -> pd.DataFrame:
     """
     MACD (12, 26, 9) with signal and histogram.
@@ -43,6 +48,9 @@ def _compute_macd(close: pd.Series) -> pd.DataFrame:
     )
 
 
+# ---------------------------------------------------------
+# Classification Helpers
+# ---------------------------------------------------------
 def _classify_rsi(rsi: Optional[float]) -> Optional[str]:
     if rsi is None or np.isnan(rsi):
         return None
@@ -57,15 +65,8 @@ def _classify_rsi(rsi: Optional[float]) -> Optional[str]:
     return "strong"
 
 
-def _classify_sma_trend(
-    close: Optional[float],
-    sma50: Optional[float],
-    sma200: Optional[float],
-) -> Optional[str]:
-    if any(
-        x is None or np.isnan(x)
-        for x in [close, sma50, sma200]
-    ):
+def _classify_sma_trend(close: float, sma50: float, sma200: float) -> Optional[str]:
+    if any(x is None or np.isnan(x) for x in [close, sma50, sma200]):
         return None
 
     if close > sma50 > sma200:
@@ -76,6 +77,7 @@ def _classify_sma_trend(
         return "short-term strength vs long-term"
     if close < sma50 and close > sma200:
         return "short-term weakness vs long-term"
+
     return "mixed"
 
 
@@ -86,10 +88,7 @@ def _combine_overall_trend(
     macd: Optional[float],
     rsi: Optional[float],
 ) -> Optional[str]:
-    """
-    Very simple overall trend classifier using SMA, MACD, RSI.
-    This is NOT trading advice, just a structured summary.
-    """
+
     if close is None or np.isnan(close):
         return None
 
@@ -103,19 +102,19 @@ def _combine_overall_trend(
         elif close < sma50 < sma200:
             bearish += 2
 
-    # MACD signals
+    # MACD
     if macd is not None and not np.isnan(macd):
         if macd > 0:
             bullish += 1
         elif macd < 0:
             bearish += 1
 
-    # RSI signals
+    # RSI
     if rsi is not None and not np.isnan(rsi):
         if rsi > 70:
-            bearish += 1  # overbought → risk of pullback
+            bearish += 1
         elif rsi < 30:
-            bullish += 1  # oversold → potential bounce
+            bullish += 1
 
     if bullish == 0 and bearish == 0:
         return None
@@ -123,20 +122,19 @@ def _combine_overall_trend(
         return "overall bullish bias"
     if bearish - bullish >= 2:
         return "overall bearish bias"
+
     return "neutral / mixed"
 
 
+# ---------------------------------------------------------
+# Main TA Summary Function
+# ---------------------------------------------------------
 def get_latest_ta_summary(
     ticker: str,
     period: str = "2y",
     interval: str = "1d",
 ) -> Optional[Dict[str, Any]]:
-    """
-    Fetch OHLCV history for `ticker` from yfinance and compute a handful of
-    technical indicators. Returns a dict summarising the *latest* bar.
 
-    Returns None if there isn't enough data.
-    """
     yf_ticker = yf.Ticker(ticker)
     df = yf_ticker.history(period=period, interval=interval)
 
@@ -152,7 +150,7 @@ def get_latest_ta_summary(
     sma50 = close.rolling(window=50, min_periods=50).mean()
     sma200 = close.rolling(window=200, min_periods=200).mean()
 
-    # Attach indicators to main df
+    # Attach indicators
     df = df.copy()
     df["rsi"] = rsi_series
     df["sma_50"] = sma50
@@ -161,37 +159,30 @@ def get_latest_ta_summary(
     df["macd_signal"] = macd_df["macd_signal"]
     df["macd_hist"] = macd_df["macd_hist"]
 
-    # Drop early rows that don't have enough data for long windows
- df_clean = df.dropna(subset=["rsi", "sma_50", "sma_200", "macd", "macd_signal"])
+    # Strict filter: require SMA200 too
+    df_clean = df.dropna(
+        subset=["rsi", "sma_50", "sma_200", "macd", "macd_signal"]
+    )
 
-
-    if df_clean.empty:
-        # not enough data for full TA set, but we can still try with partial
-        latest = df.iloc[-1]
-    else:
+    # Pick best available row
+    if not df_clean.empty:
         latest = df_clean.iloc[-1]
+    else:
+        latest = df.iloc[-1]  # fallback
 
     price = float(latest["Close"])
 
-    rsi_val = float(latest.get("rsi")) if not pd.isna(latest.get("rsi")) else None
-    sma50_val = float(latest.get("sma_50")) if not pd.isna(latest.get("sma_50")) else None
-    sma200_val = float(latest.get("sma_200")) if not pd.isna(latest.get("sma_200")) else None
-    macd_val = float(latest.get("macd")) if not pd.isna(latest.get("macd")) else None
-    macd_signal_val = (
-        float(latest.get("macd_signal")) if not pd.isna(latest.get("macd_signal")) else None
-    )
-    macd_hist_val = (
-        float(latest.get("macd_hist")) if not pd.isna(latest.get("macd_hist")) else None
-    )
+    rsi_val = latest["rsi"] if not pd.isna(latest["rsi"]) else None
+    sma50_val = latest["sma_50"] if not pd.isna(latest["sma_50"]) else None
+    sma200_val = latest["sma_200"] if not pd.isna(latest["sma_200"]) else None
+    macd_val = latest["macd"] if not pd.isna(latest["macd"]) else None
+    macd_signal_val = latest["macd_signal"] if not pd.isna(latest["macd_signal"]) else None
+    macd_hist_val = latest["macd_hist"] if not pd.isna(latest["macd_hist"]) else None
 
     rsi_signal = _classify_rsi(rsi_val)
     sma_trend = _classify_sma_trend(price, sma50_val, sma200_val)
     overall_trend = _combine_overall_trend(
-        price,
-        sma50_val,
-        sma200_val,
-        macd_val,
-        rsi_val,
+        price, sma50_val, sma200_val, macd_val, rsi_val
     )
 
     return {
