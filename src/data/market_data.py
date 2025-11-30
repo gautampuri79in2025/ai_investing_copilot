@@ -23,46 +23,69 @@ def get_market_snapshot(ticker: str) -> MarketSnapshot:
         else:
             day_change_pct = None
 
-    # ===== P/E RATIO (bulletproof multi-source logic) =====
+    # ===== P/E RATIO (more robust multi-source logic) =====
     pe_ratio = None
 
-    # ---- 1. fast_info fields (sometimes work) ----
+    # ---- 1. fast_info fields (sometimes present) ----
     try:
         fi = yt.fast_info
-        pe_ratio = _safe_float(getattr(fi, "trailing_pe", None))
-        if pe_ratio is None:
-            pe_ratio = _safe_float(getattr(fi, "forward_pe", None))
-    except:
+        fast_candidates = [
+            getattr(fi, "trailing_pe", None),
+            getattr(fi, "forward_pe", None),
+        ]
+        for c in fast_candidates:
+            pe_ratio = _safe_float(c)
+            if pe_ratio is not None:
+                break
+    except Exception:
         pass
 
-    # ---- 2. yahoo info dict (slow but more complete) ----
+    # ---- 2. info / get_info dict (more complete, sometimes slow) ----
     if pe_ratio is None:
+        info = {}
         try:
-            info = yt.get_info()
+            # yfinance versions differ: try .info first, then .get_info()
+            try:
+                info = yt.info or {}
+            except Exception:
+                info = yt.get_info() or {}
+        except Exception:
+            info = {}
 
-            # Try multiple possible Yahoo keys
-            pe_ratio = (
-                _safe_float(info.get("trailingPE"))
-                or _safe_float(info.get("forwardPE"))
-                or _safe_float(info.get("trailingPe"))
-                or _safe_float(info.get("forwardPe"))
-            )
-        except:
-            pass
-
-    # ---- 3. earnings / EPS fallback ----
-    # P/E = price / EPS
-    if pe_ratio is None:
         try:
-            earnings = yt.get_earnings()
-            if earnings is not None and not earnings.empty:
-                eps = float(earnings["Earnings"].iloc[-1])
-                if eps and last_price:
+            # Try multiple common P/E keys
+            pe_candidates = [
+                info.get("trailingPE"),
+                info.get("forwardPE"),
+                info.get("trailingPe"),
+                info.get("forwardPe"),
+                info.get("peRatio"),
+                info.get("PERatio"),
+            ]
+            for c in pe_candidates:
+                pe_ratio = _safe_float(c)
+                if pe_ratio is not None:
+                    break
+
+            # If still None, derive from EPS if available: P/E = price / EPS
+            if pe_ratio is None:
+                eps_candidates = [
+                    info.get("trailingEps"),
+                    info.get("epsTrailing12Months"),
+                    info.get("epsForward"),
+                ]
+                eps = None
+                for e in eps_candidates:
+                    eps = _safe_float(e)
+                    if eps not in (None, 0.0):
+                        break
+
+                if eps not in (None, 0.0) and last_price:
                     pe_ratio = last_price / eps
-        except:
+        except Exception:
             pass
 
-    # ---- 4. If everything fails -> N/A ----
+    # ---- 3. Final clean-up ----
     if pe_ratio is not None:
         pe_ratio = round(float(pe_ratio), 2)
 
@@ -72,4 +95,3 @@ def get_market_snapshot(ticker: str) -> MarketSnapshot:
         day_change_pct=day_change_pct,
         pe_ratio=pe_ratio,
     )
-
