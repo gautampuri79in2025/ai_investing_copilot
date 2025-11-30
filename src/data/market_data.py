@@ -1,100 +1,75 @@
-from dataclasses import dataclass, asdict
-from typing import Optional, Dict, Any
-import math
-
-import yfinance as yf
-
-
-@dataclass
-class MarketSnapshot:
-    ticker: str
-    price: Optional[float]
-    day_change_pct: Optional[float]
-    pe_ratio: Optional[float]
-    eps: Optional[float]
-
-
-def _safe_float(val) -> Optional[float]:
-    """Convert value to float or return None."""
+def _safe_float(v):
     try:
-        if val is None:
+        if v is None:
             return None
-        f = float(val)
-        if math.isnan(f):
-            return None
-        return f
+        return float(v)
     except Exception:
         return None
 
 
-def get_market_snapshot(ticker: str) -> Dict[str, Any]:
-    """
-    Fetch a clean market snapshot for a ticker using yfinance.
+def get_market_snapshot(ticker: str) -> MarketSnapshot:
+    yt = yf.Ticker(ticker)
 
-    - Price from last close
-    - Day % change from previous close
-    - EPS (trailing)
-    - P/E = price / EPS if possible, otherwise from Yahoo if available
-    """
-    yf_ticker = yf.Ticker(ticker)
+    # ===== PRICE & DAY CHANGE =====
+    hist = yt.history(period="2d", auto_adjust=False)
+    if hist.empty:
+        last_price = None
+        day_change_pct = None
+    else:
+        last_price = float(hist["Close"].iloc[-1])
+        if len(hist) > 1:
+            prev_close = float(hist["Close"].iloc[-2])
+            day_change_pct = ((last_price - prev_close) / prev_close * 100.0) if prev_close else None
+        else:
+            day_change_pct = None
 
-    # -------- Price + Day Change % --------
-    price: Optional[float] = None
-    day_change_pct: Optional[float] = None
+    # ===== P/E RATIO (bulletproof multi-source logic) =====
+    pe_ratio = None
 
+    # ---- 1. fast_info fields (sometimes work) ----
     try:
-        hist = yf_ticker.history(period="2d", interval="1d")
-    except Exception:
-        hist = None
+        fi = yt.fast_info
+        pe_ratio = _safe_float(getattr(fi, "trailing_pe", None))
+        if pe_ratio is None:
+            pe_ratio = _safe_float(getattr(fi, "forward_pe", None))
+    except:
+        pass
 
-    if hist is not None and not hist.empty:
-        last = hist.iloc[-1]
-        prev = hist.iloc[-2] if len(hist) > 1 else None
+    # ---- 2. yahoo info dict (slow but more complete) ----
+    if pe_ratio is None:
+        try:
+            info = yt.get_info()
 
-        price = _safe_float(last.get("Close"))
+            # Try multiple possible Yahoo keys
+            pe_ratio = (
+                _safe_float(info.get("trailingPE"))
+                or _safe_float(info.get("forwardPE"))
+                or _safe_float(info.get("trailingPe"))
+                or _safe_float(info.get("forwardPe"))
+            )
+        except:
+            pass
 
-        if prev is not None:
-            prev_close = _safe_float(prev.get("Close"))
-            if prev_close not in (None, 0):
-                day_change_pct = (price - prev_close) / prev_close * 100.0
+    # ---- 3. earnings / EPS fallback ----
+    # P/E = price / EPS
+    if pe_ratio is None:
+        try:
+            earnings = yt.get_earnings()
+            if earnings is not None and not earnings.empty:
+                eps = float(earnings["Earnings"].iloc[-1])
+                if eps and last_price:
+                    pe_ratio = last_price / eps
+        except:
+            pass
 
-    # -------- Fast info + full info --------
-    try:
-        fast = dict(yf_ticker.fast_info)
-    except Exception:
-        fast = {}
+    # ---- 4. If everything fails -> N/A ----
+    if pe_ratio is not None:
+        pe_ratio = round(float(pe_ratio), 2)
 
-    try:
-        info = yf_ticker.info or {}
-    except Exception:
-        info = {}
-
-    # -------- EPS (trailing) --------
-    eps = _safe_float(
-        fast.get("eps")
-        or fast.get("trailingEps")
-        or info.get("trailingEps")
-        or info.get("epsTrailingTwelveMonths")
-    )
-
-    # -------- P/E Ratio --------
-    pe_ratio = _safe_float(
-        fast.get("trailingPE")
-        or fast.get("peRatio")
-        or info.get("trailingPE")
-        or info.get("forwardPE")
-    )
-
-    # If still missing but we have price + EPS, calculate manually
-    if (pe_ratio is None) and (price is not None) and (eps not in (None, 0)):
-        pe_ratio = price / eps
-
-    snapshot = MarketSnapshot(
+    return MarketSnapshot(
         ticker=ticker,
-        price=price,
+        last_price=last_price,
         day_change_pct=day_change_pct,
         pe_ratio=pe_ratio,
-        eps=eps,
     )
 
-    return asdict(snapshot)
