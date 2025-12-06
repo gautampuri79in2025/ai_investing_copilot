@@ -1,35 +1,17 @@
 from dataclasses import dataclass
-from typing import Optional
-import time
-
+from typing import Optional, Dict, Any
 import yfinance as yf
 
 
 @dataclass
 class MarketSnapshot:
-    """
-    Simple container for the top-of-email snapshot.
-
-    NOTE: No market_cap here on purpose – we only care about:
-      - last_price
-      - day_change_pct
-      - pe_ratio
-    """
     ticker: str
     last_price: Optional[float]
     day_change_pct: Optional[float]
     pe_ratio: Optional[float]
 
 
-# --- Simple throttle + per-run cache to avoid Yahoo throttling ---
-
-_LAST_YF_CALL_TS = None          # type: Optional[float]
-_REQUEST_GAP_SECONDS = 0.5       # 500 ms between calls
-_MARKET_SNAPSHOT_CACHE = {}      # ticker -> MarketSnapshot
-
-
 def _safe_float(v):
-    """Convert to float or return None."""
     try:
         if v is None:
             return None
@@ -38,80 +20,60 @@ def _safe_float(v):
         return None
 
 
-def _throttled_ticker(ticker: str):
+def _compute_pe_from_info(info: Dict[str, Any], last_price: Optional[float]) -> Optional[float]:
     """
-    Wrap yf.Ticker with a global 0.5s gap between calls to avoid
-    hammering Yahoo from GitHub Actions / Cloud Shell IPs.
+    Fallback: compute P/E = price / EPS using various EPS keys
+    (these are what Yahoo normally exposes in the JSON).
     """
-    global _LAST_YF_CALL_TS
+    if last_price is None or not info:
+        return None
 
-    now = time.time()
-    if _LAST_YF_CALL_TS is not None:
-        delta = now - _LAST_YF_CALL_TS
-        if delta < _REQUEST_GAP_SECONDS:
-            time.sleep(_REQUEST_GAP_SECONDS - delta)
+    eps_candidates = [
+        info.get("trailingEps"),
+        info.get("epsTrailingTwelveMonths"),
+        info.get("regularMarketEps"),
+        info.get("earningsPerShare"),
+    ]
 
-    _LAST_YF_CALL_TS = time.time()
-    return yf.Ticker(ticker)
+    for eps in eps_candidates:
+        eps_val = _safe_float(eps)
+        if eps_val and eps_val > 0:
+            return round(last_price / eps_val, 2)
+
+    return None
 
 
 def get_market_snapshot(ticker: str) -> MarketSnapshot:
-    """
-    Fetch:
-      - last close price
-      - day change %
-      - P/E ratio (from multiple possible Yahoo sources)
-
-    Also:
-      - throttles Yahoo requests
-      - caches per run
-    """
-    # --- per-run cache: don't refetch the same ticker twice in one run ---
-    if ticker in _MARKET_SNAPSHOT_CACHE:
-        return _MARKET_SNAPSHOT_CACHE[ticker]
-
-    yt = _throttled_ticker(ticker)
+    yt = yf.Ticker(ticker)
 
     # ===== PRICE & DAY CHANGE =====
     hist = yt.history(period="2d", auto_adjust=False)
     if hist.empty:
-        last_price: Optional[float] = None
-        day_change_pct: Optional[float] = None
+        last_price = None
+        day_change_pct = None
     else:
         last_price = float(hist["Close"].iloc[-1])
         if len(hist) > 1:
             prev_close = float(hist["Close"].iloc[-2])
-            if prev_close:
-                day_change_pct = (last_price - prev_close) / prev_close * 100.0
-            else:
-                day_change_pct = None
+            day_change_pct = ((last_price - prev_close) / prev_close * 100.0) if prev_close else None
         else:
             day_change_pct = None
 
-    # ===== P/E RATIO (multi-source, throttle-friendly) =====
+    # ===== P/E RATIO =====
     pe_ratio: Optional[float] = None
 
-    # ---- 1. fast_info (JSON-like, lightweight) ----
+    # 1) Try fast_info first
     try:
         fi = yt.fast_info
-
-        # Try mapping-style access first (newer yfinance)
-        if hasattr(fi, "get"):
-            pe_ratio = (
-                _safe_float(fi.get("trailingPE"))
-                or _safe_float(fi.get("forwardPE"))
-            )
-        else:
-            # Attribute-style (older yfinance) – try both camel + snake just in case
-            for attr in ("trailingPE", "forwardPE", "trailing_pe", "forward_pe"):
-                val = getattr(fi, attr, None)
-                pe_ratio = _safe_float(val)
-                if pe_ratio is not None:
-                    break
+        for attr in ("trailing_pe", "forward_pe", "pe_ratio"):
+            if pe_ratio is None:
+                pe_ratio = _safe_float(getattr(fi, attr, None))
     except Exception:
         pass
 
-    # ---- 2. info dict (heavier; only if still None) ----
+    info = None
+
+    # 2) Try info dict: trailingPE / forwardPE
     if pe_ratio is None:
         try:
             info = yt.get_info()
@@ -122,32 +84,35 @@ def get_market_snapshot(ticker: str) -> MarketSnapshot:
                 or _safe_float(info.get("forwardPe"))
             )
         except Exception:
-            pass
+            info = None
 
-    # ---- 3. earnings / EPS fallback (last resort) ----
-    # P/E = price / EPS
+    # 3) If still None, compute P/E from EPS fields in info
+    if pe_ratio is None:
+        if info is None:
+            try:
+                info = yt.get_info()
+            except Exception:
+                info = None
+
+        if info is not None:
+            pe_ratio = _compute_pe_from_info(info, last_price)
+
+    # 4) Last-ditch: use get_earnings() if it really exists and looks like EPS
     if pe_ratio is None:
         try:
             earnings = yt.get_earnings()
-            if earnings is not None and not earnings.empty and last_price:
-                # Take last reported annual EPS
-                eps = float(earnings["Earnings"].iloc[-1])
-                if eps:
-                    pe_ratio = last_price / eps
+            if earnings is not None and not earnings.empty:
+                # This is very ticker-dependent; treat carefully
+                eps_candidate = earnings.iloc[-1].get("Earnings", None)
+                eps_val = _safe_float(eps_candidate)
+                if eps_val and eps_val > 0 and last_price:
+                    pe_ratio = round(last_price / eps_val, 2)
         except Exception:
             pass
 
-    # ---- 4. Final formatting ----
-    if pe_ratio is not None:
-        pe_ratio = round(float(pe_ratio), 2)
-
-    snapshot = MarketSnapshot(
+    return MarketSnapshot(
         ticker=ticker,
         last_price=last_price,
         day_change_pct=day_change_pct,
         pe_ratio=pe_ratio,
     )
-
-    # cache it for this run
-    _MARKET_SNAPSHOT_CACHE[ticker] = snapshot
-    return snapshot
