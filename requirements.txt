@@ -3,3 +3,5 @@ python-dotenv
 yfinance
 pandas
 requests
+yahoo_fin
+lxml
