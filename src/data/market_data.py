@@ -1,6 +1,8 @@
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import Optional
+
 import yfinance as yf
+from yahoo_fin import stock_info as si
 
 
 @dataclass
@@ -15,101 +17,75 @@ def _safe_float(v):
     try:
         if v is None:
             return None
+        if isinstance(v, str):
+            v = v.replace(",", "").strip()
+            # Handle things like "28.34x" or "28.34"
+            v = v.replace("x", "")
         return float(v)
     except Exception:
         return None
 
 
-def _compute_pe_from_info(info: Dict[str, Any], last_price: Optional[float]) -> Optional[float]:
+def _get_pe_from_yahoo_fin(ticker: str) -> Optional[float]:
     """
-    Fallback: compute P/E = price / EPS using various EPS keys
-    (these are what Yahoo normally exposes in the JSON).
+    Primary P/E source using yahoo_fin.
+    Tries to read P/E from the quote table.
     """
-    if last_price is None or not info:
+    try:
+        qt = si.get_quote_table(ticker, dict_result=True)
+    except Exception:
         return None
 
-    eps_candidates = [
-        info.get("trailingEps"),
-        info.get("epsTrailingTwelveMonths"),
-        info.get("regularMarketEps"),
-        info.get("earningsPerShare"),
+    if not qt:
+        return None
+
+    # Common keys yahoo_fin exposes
+    candidates = [
+        "PE Ratio (TTM)",
+        "PE Ratio",
+        "P/E Ratio",
+        "P/E (TTM)",
     ]
 
-    for eps in eps_candidates:
-        eps_val = _safe_float(eps)
-        if eps_val and eps_val > 0:
-            return round(last_price / eps_val, 2)
+    for key in candidates:
+        if key in qt:
+            pe_val = _safe_float(qt.get(key))
+            if pe_val is not None and pe_val > 0:
+                return round(pe_val, 2)
 
     return None
 
 
-def get_market_snapshot(ticker: str) -> MarketSnapshot:
+def _get_price_and_day_change(ticker: str):
     yt = yf.Ticker(ticker)
-
-    # ===== PRICE & DAY CHANGE =====
     hist = yt.history(period="2d", auto_adjust=False)
+
     if hist.empty:
-        last_price = None
-        day_change_pct = None
-    else:
-        last_price = float(hist["Close"].iloc[-1])
-        if len(hist) > 1:
-            prev_close = float(hist["Close"].iloc[-2])
-            day_change_pct = ((last_price - prev_close) / prev_close * 100.0) if prev_close else None
+        return None, None
+
+    last_price = float(hist["Close"].iloc[-1])
+
+    if len(hist) > 1:
+        prev_close = float(hist["Close"].iloc[-2])
+        if prev_close:
+            day_change_pct = (last_price - prev_close) / prev_close * 100.0
         else:
             day_change_pct = None
+    else:
+        day_change_pct = None
 
-    # ===== P/E RATIO =====
-    pe_ratio: Optional[float] = None
+    return last_price, day_change_pct
 
-    # 1) Try fast_info first
-    try:
-        fi = yt.fast_info
-        for attr in ("trailing_pe", "forward_pe", "pe_ratio"):
-            if pe_ratio is None:
-                pe_ratio = _safe_float(getattr(fi, attr, None))
-    except Exception:
-        pass
 
-    info = None
+def get_market_snapshot(ticker: str) -> MarketSnapshot:
+    # 1) Price + day change via yfinance (this part was already solid)
+    last_price, day_change_pct = _get_price_and_day_change(ticker)
 
-    # 2) Try info dict: trailingPE / forwardPE
-    if pe_ratio is None:
-        try:
-            info = yt.get_info()
-            pe_ratio = (
-                _safe_float(info.get("trailingPE"))
-                or _safe_float(info.get("forwardPE"))
-                or _safe_float(info.get("trailingPe"))
-                or _safe_float(info.get("forwardPe"))
-            )
-        except Exception:
-            info = None
+    # 2) Try to get P/E from yahoo_fin first
+    pe_ratio = _get_pe_from_yahoo_fin(ticker)
 
-    # 3) If still None, compute P/E from EPS fields in info
-    if pe_ratio is None:
-        if info is None:
-            try:
-                info = yt.get_info()
-            except Exception:
-                info = None
-
-        if info is not None:
-            pe_ratio = _compute_pe_from_info(info, last_price)
-
-    # 4) Last-ditch: use get_earnings() if it really exists and looks like EPS
-    if pe_ratio is None:
-        try:
-            earnings = yt.get_earnings()
-            if earnings is not None and not earnings.empty:
-                # This is very ticker-dependent; treat carefully
-                eps_candidate = earnings.iloc[-1].get("Earnings", None)
-                eps_val = _safe_float(eps_candidate)
-                if eps_val and eps_val > 0 and last_price:
-                    pe_ratio = round(last_price / eps_val, 2)
-        except Exception:
-            pass
-
+    # 3) If yahoo_fin fails completely, leave as None
+    # (we can add yfinance fallback later if really needed)
     return MarketSnapshot(
         ticker=ticker,
         last_price=last_price,
