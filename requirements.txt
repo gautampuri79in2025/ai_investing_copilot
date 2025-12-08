@@ -5,3 +5,5 @@ pandas
 requests
 yahoo_fin
 lxml
+requests_html
+html5lib
