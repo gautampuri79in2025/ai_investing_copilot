@@ -1,0 +1,47 @@
+name: Test market_data.py (P/E fallback)
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test-market-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance yahoo_fin pandas numpy requests lxml
+
+      - name: Run snapshot test for GOOG
+        env:
+          TZ: UTC
+        run: |
+          python - <<'PY'
+          import json
+          import logging
+          logging.basicConfig(level=logging.DEBUG)
+          from src.data.market_data import get_market_snapshot
+          from dataclasses import asdict
+          ticker = "GOOG"
+          snapshot = get_market_snapshot(ticker)
+          out = {"ticker": ticker, "snapshot": asdict(snapshot)}
+          print("SNAPSHOT:", json.dumps(out, indent=2))
+          import os
+          os.makedirs("outputs", exist_ok=True)
+          with open(f"outputs/{ticker}_snapshot_test.json", "w") as f:
+              json.dump(out, f, indent=2)
+          PY
+
+      - name: Upload output artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-data-snapshot
+          path: outputs/*.json
