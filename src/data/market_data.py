@@ -235,3 +235,40 @@ def get_market_snapshot(ticker: str) -> MarketSnapshot:
         day_change_pct=day_change_pct,
         pe_ratio=pe_ratio,
     )
+def get_stock_snapshot(ticker: str) -> dict:
+    """
+    Backwards-compatible wrapper used by CLI code.
+
+    Returns a dict with keys the CLI expects (price, day_change_pct, market_cap,
+    pe_ratio, eps, currency, ticker). Uses yfinance.info as a best-effort
+    source for market_cap/eps/currency if available.
+    """
+    # 1) base snapshot (price + day change + pe)
+    ms = get_market_snapshot(ticker)
+
+    # 2) best-effort fetch of extra fields via yfinance.info (optional)
+    market_cap = None
+    eps = None
+    currency = None
+    try:
+        yt = yf.Ticker(ticker)
+        info = getattr(yt, "info", {}) or {}
+        # common info keys
+        market_cap = info.get("marketCap") or info.get("market_cap") or None
+        # EPS keys vary
+        eps = info.get("trailingEps") or info.get("epsTrailingTwelveMonths") or info.get("eps") or None
+        # currency
+        currency = info.get("currency") or info.get("financialCurrency") or None
+    except Exception:
+        # ignore errors; keep None
+        pass
+
+    return {
+        "ticker": ticker,
+        "price": ms.last_price,
+        "day_change_pct": ms.day_change_pct,
+        "market_cap": market_cap,
+        "pe_ratio": ms.pe_ratio,
+        "eps": eps,
+        "currency": currency or "USD",
+    }
