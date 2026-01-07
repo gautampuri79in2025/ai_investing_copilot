@@ -1,61 +1,58 @@
+```python name=src/cli/morning_report_cli.py url=https://github.com/gautampuri79in2025/ai_investing_copilot/blob/main/src/cli/morning_report_cli.py
 import os
 import sys
 from datetime import datetime
 from typing import List, Dict, Any
 
-import yfinance as yf
-
 from src.ta.indicators import get_latest_ta_summary
 from src.ai.research_agent import analyse_stock_with_ai
 from src.utils.emailer import send_email
 
+# Use the centralized market data logic (includes yahoo_fin -> yfinance fallback)
+from src.data.market_data import get_stock_snapshot as data_get_stock_snapshot
 
 # Default tickers for the morning report
 DEFAULT_TICKERS = [
     "GOOG"
 ]
 
+
 def get_market_snapshot(ticker: str) -> Dict[str, Any]:
     """
-    Fetch a simple market snapshot for a ticker using yfinance.
-    Returns a dict with fields used by both AI and email.
+    Backwards-compatible wrapper for the morning report that uses the central
+    data_get_stock_snapshot implementation (which contains the robust P/E logic).
+
+    Returns a dict shaped the way the rest of this file expects:
+      - ticker
+      - price
+      - currency
+      - day_change_percent
+      - market_cap
+      - pe_ratio
+      - eps (optional)
+      - recent_news (optional)
     """
-    ticker_obj = yf.Ticker(ticker)
+    raw = {}
+    try:
+        raw = data_get_stock_snapshot(ticker) or {}
+    except Exception:
+        # If anything goes wrong, fall back to minimal dict so the caller can continue
+        raw = {}
 
-    # Try to use fast_info where available
-    fast = getattr(ticker_obj, "fast_info", None)
-    hist = ticker_obj.history(period="2d")
-
-    price = None
-    day_change_pct = None
-    currency = None
-    market_cap = None
-    pe_ratio = None
-
-    if fast:
-        price = getattr(fast, "last_price", None)
-        currency = getattr(fast, "currency", None)
-        market_cap = getattr(fast, "market_cap", None)
-        pe_ratio = getattr(fast, "pe_ratio", None)
-
-    # Fallback to history if needed
-    if hist is not None and not hist.empty:
-        last_close = float(hist["Close"].iloc[-1])
-        prev_close = float(hist["Close"].iloc[-2]) if len(hist) > 1 else None
-
-        if price is None:
-            price = last_close
-
-        if prev_close:
-            day_change_pct = ((last_close - prev_close) / prev_close) * 100.0
+    # Normalize day change field names (some helpers use _pct vs _percent)
+    day_change = raw.get("day_change_percent")
+    if day_change is None:
+        day_change = raw.get("day_change_pct") or raw.get("day_change")
 
     snapshot = {
         "ticker": ticker,
-        "price": price,
-        "currency": currency or "USD",
-        "day_change_percent": day_change_pct,
-        "market_cap": market_cap,
-        "pe_ratio": pe_ratio,
+        "price": raw.get("price"),
+        "currency": raw.get("currency") or "USD",
+        "day_change_percent": day_change,
+        "market_cap": raw.get("market_cap"),
+        "pe_ratio": raw.get("pe_ratio"),
+        "eps": raw.get("eps"),
+        "recent_news": raw.get("recent_news", []),
     }
 
     return snapshot
@@ -161,8 +158,8 @@ def build_email_body(
         summary = analysis.get("summary")
         bull_case = analysis.get("bull_case")
         bear_case = analysis.get("bear_case")
-        key_risks = analysis.get("key_risks")
-        final = analysis.get("final_stance")
+        key_risks = analysis.get("key_risks") or analysis.get("risks")
+        final = analysis.get("final_stance") or analysis.get("final_rating")
 
         if summary:
             detail_lines.append("Summary:")
@@ -213,7 +210,7 @@ def main():
     for ticker in tickers:
         print(f"🔍 Analysing {ticker} ...")
 
-        # Market snapshot
+        # Market snapshot (now uses centralized logic with fallback)
         snapshot = get_market_snapshot(ticker)
 
         # Technical analysis summary (using your TA module)
@@ -272,3 +269,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+```
