@@ -43,11 +43,7 @@ Fields may include:
 TASKS
 ==================================================
 
-1. SUMMARY (BUSINESS CONTEXT)
-- In 3–4 sentences, summarise what kind of company this is and its general position (leader, challenger, niche, etc.).
-- Do NOT make up specific numbers that are not in the snapshot.
-
-2. FUNDAMENTAL VALUATION COMMENT
+1. FUNDAMENTAL VALUATION COMMENT
 - Comment on valuation using P/E, EPS, and market cap where available.
 - Indicate whether valuation looks "rich", "reasonable", "stretched", or "cannot assess" based on the data provided.
 - If key metrics are missing, say so clearly.
@@ -60,16 +56,7 @@ Explain clearly (like to a smart retail investor) what the TECHNICALS currently 
 - ATR: what this says about volatility (quiet, moderate, high).
 - Bollinger Bands: whether price is near upper band, lower band, or inside bands, and what that implies.
 
-4. BULL CASE
-- In 2–4 sentences, summarise the main reasons someone might want to own this stock now, based on BOTH fundamentals and technicals.
-
-5. BEAR CASE
-- In 2–4 sentences, summarise the main reasons someone might avoid or sell this stock now, based on BOTH fundamentals and technicals.
-
-6. RISKS
-- List 3–5 key risks as short bullet-style phrases (but still as plain text strings in JSON).
-
-7. FINAL RATING (BUY / SELL / WATCHLIST)
+4. FINAL RATING (BUY / SELL / WATCHLIST)
 - Give a single final rating as ONE of:
   - "buy"
   - "sell"
