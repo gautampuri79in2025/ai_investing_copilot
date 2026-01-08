@@ -1,4 +1,3 @@
-```python name=src/cli/morning_report_cli.py url=https://github.com/gautampuri79in2025/ai_investing_copilot/blob/main/src/cli/morning_report_cli.py
 import os
 import sys
 from datetime import datetime
@@ -269,4 +268,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-```
