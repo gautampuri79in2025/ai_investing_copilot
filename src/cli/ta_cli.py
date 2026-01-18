@@ -78,10 +78,10 @@ def main():
         help="Ticker symbol to analyse (e.g. AAPL, MSFT, TSLA)",
     )
     parser.add_argument(
-        "--period",
-        default="6mo",
-        help="History period for analysis (e.g. 3mo, 6mo, 1y, 2y). Default: 6mo",
-    )
+    "--period",
+    default="2y",
+    help="History period for analysis (needs >= 200 trading days for SMA200)"
+)
     parser.add_argument(
         "--interval",
         default="1d",
