@@ -1,269 +1,60 @@
-import os
-import sys
-from datetime import datetime
-from typing import List, Dict, Any
-
+import argparse
 from src.ta.indicators import get_latest_ta_summary
-from src.ai.research_agent import analyse_stock_with_ai
-from src.utils.emailer import send_email
 
-# Use the centralized market data logic (includes yahoo_fin -> yfinance fallback)
-from src.data.market_data import get_stock_snapshot as data_get_stock_snapshot
+def print_ta_summary(summary: dict):
+    ticker = summary["ticker"]
+    print("\n" + "=" * 60)
+    print(f"📊 TECHNICAL ANALYSIS SUMMARY: {ticker}")
+    print("=" * 60)
 
-# Default tickers for the morning report
-DEFAULT_TICKERS = [
-    "GOOG"
-]
+    price = summary.get("price")
+    ma50 = summary.get("sma_50")
+    ma200 = summary.get("sma_200")
+    trend = summary.get("sma_trend")
+    rsi = summary.get("rsi")
+    rsi_state = summary.get("rsi_signal")
+    macd = summary.get("macd")
+    macd_signal = summary.get("macd_signal")
+    macd_state = summary.get("overall_trend")
+    vwap = summary.get("vwap")
+    peg = summary.get("peg")
 
+    print(f"Last Close:      {price:.2f}" if price is not None else "Last Close:      Data not available")
+    print(f"50-day MA:       {ma50:.2f}" if ma50 is not None else "50-day MA:       Data not available")
+    print(f"200-day MA:      {ma200:.2f}" if ma200 is not None else "200-day MA:      Data not available")
+    print(f"Trend (50 vs 200):   {trend or 'unknown'}")
 
-def get_market_snapshot(ticker: str) -> Dict[str, Any]:
-    """
-    Backwards-compatible wrapper for the morning report that uses the central
-    data_get_stock_snapshot implementation (which contains the robust P/E logic).
+    print(f"RSI (14):        {rsi:.2f}" if rsi is not None else "RSI (14):        Data not available")
+    print(f"RSI State:       {rsi_state or 'unknown'}")
 
-    Returns a dict shaped the way the rest of this file expects:
-      - ticker
-      - price
-      - currency
-      - day_change_percent
-      - market_cap
-      - pe_ratio
-      - eps (optional)
-      - recent_news (optional)
-    """
-    raw = {}
-    try:
-        raw = data_get_stock_snapshot(ticker) or {}
-    except Exception:
-        # If anything goes wrong, fall back to minimal dict so the caller can continue
-        raw = {}
+    if macd is not None and macd_signal is not None:
+        print(f"\nMACD:            {macd:.4f}")
+        print(f"MACD Signal:     {macd_signal:.4f}")
+        print(f"Overall Trend:   {macd_state or 'unknown'}")
+    else:
+        print("\nMACD:            Data not available")
+        print("MACD Signal:     Data not available")
+        print(f"Overall Trend:   {macd_state or 'unknown'}")
 
-    # Normalize day change field names (some helpers use _pct vs _percent)
-    day_change = raw.get("day_change_percent")
-    if day_change is None:
-        day_change = raw.get("day_change_pct") or raw.get("day_change")
-
-    snapshot = {
-        "ticker": ticker,
-        "price": raw.get("price"),
-        "currency": raw.get("currency") or "USD",
-        "day_change_percent": day_change,
-        "market_cap": raw.get("market_cap"),
-        "pe_ratio": raw.get("pe_ratio"),
-        "eps": raw.get("eps"),
-        "recent_news": raw.get("recent_news", []),
-    }
-
-    return snapshot
-
-
-def format_number(value: Any, decimals: int = 2, suffix: str = "") -> str:
-    if isinstance(value, (int, float)):
-        fmt = f"{{:.{decimals}f}}"
-        return fmt.format(value) + suffix
-    return str(value)
-
-
-def build_email_body(
-    results: List[Dict[str, Any]],
-) -> str:
-    """
-    Build the email body with:
-      1. Summary table at the top
-      2. Detailed sections per ticker below (market + TA + AI)
-    """
-    summary_lines: List[str] = []
-    detail_lines: List[str] = []
-
-    # ---- SUMMARY TABLE ----
-    summary_lines.append("DAILY STOCK SUMMARY")
-    summary_lines.append("")
-    summary_lines.append("| Ticker | Last Price | Day Change % | Recommendation |")
-    summary_lines.append("|--------|------------|--------------|----------------|")
-
-    for r in results:
-        ticker = r["ticker"]
-
-        snapshot = r["snapshot"]
-        analysis = r["analysis"]
-        ta = r["ta_summary"]
-
-        price = snapshot.get("price")
-        change = snapshot.get("day_change_percent")
-        rec = analysis.get("final_stance", "watchlist")
-
-        price_str = format_number(price, 2)
-        change_str = (
-            format_number(change, 2, "%") if isinstance(change, (int, float)) else str(change)
-        )
-
-        summary_lines.append(
-            f"| {ticker} | {price_str} | {change_str} | {rec} |"
-        )
-
-    # ---- DETAILED PER-TICKER SECTIONS ----
-    for r in results:
-        ticker = r["ticker"]
-        snapshot = r["snapshot"]
-        analysis = r["analysis"]
-        ta = r["ta_summary"]
-
-        detail_lines.append("")
-        detail_lines.append("=" * 60)
-        detail_lines.append(f"{ticker}")
-        detail_lines.append("=" * 60)
-        detail_lines.append("")
-
-        # MARKET SNAPSHOT
-        detail_lines.append("=== MARKET SNAPSHOT ===")
-        detail_lines.append(f"Price:        {format_number(snapshot.get('price'), 2)} {snapshot.get('currency')}")
-        detail_lines.append(
-            f"Day Change %: {format_number(snapshot.get('day_change_percent'), 2, '%')}"
-        )
-        detail_lines.append(f"P/E Ratio:    {format_number(snapshot.get('pe_ratio'), 2)}")
-        detail_lines.append("")
-
-        # TECHNICAL ANALYSIS SUMMARY
-        if ta:
-            detail_lines.append("=== TECHNICALS (TA SUMMARY) ===")
-            price = ta.get("price")
-            rsi = ta.get("rsi")
-            rsi_signal = ta.get("rsi_signal")
-            macd = ta.get("macd")
-            macd_signal = ta.get("macd_signal")
-            macd_hist = ta.get("macd_hist")
-            sma50 = ta.get("sma_50")
-            sma200 = ta.get("sma_200")
-            sma_trend = ta.get("sma_trend")
-            overall_trend = ta.get("overall_trend")
-
-            detail_lines.append(f"Close Price:  {format_number(price, 2)}")
-            detail_lines.append(f"RSI:          {format_number(rsi, 2)} ({rsi_signal})")
-            detail_lines.append(
-                f"MACD:         {format_number(macd, 3)} | Signal: {format_number(macd_signal, 3)} | Hist: {format_number(macd_hist, 3)}"
-            )
-            detail_lines.append(
-                f"SMA 50 / 200: {format_number(sma50, 2)} / {format_number(sma200, 2)}  → {sma_trend}"
-            )
-            detail_lines.append(f"Overall Trend: {overall_trend}")
-            detail_lines.append("")
-        else:
-            detail_lines.append("=== TECHNICALS (TA SUMMARY) ===")
-            detail_lines.append("Not enough data to compute TA indicators.")
-            detail_lines.append("")
-
-        # AI ANALYSIS
-        detail_lines.append("=== AI ANALYSIS ===")
-        summary = analysis.get("summary")
-        bull_case = analysis.get("bull_case")
-        bear_case = analysis.get("bear_case")
-        key_risks = analysis.get("key_risks") or analysis.get("risks")
-        final = analysis.get("final_stance") or analysis.get("final_rating")
-
-        if summary:
-            detail_lines.append("Summary:")
-            detail_lines.append(summary)
-            detail_lines.append("")
-
-        if bull_case:
-            detail_lines.append("Bull Case:")
-            detail_lines.append(bull_case)
-            detail_lines.append("")
-
-        if bear_case:
-            detail_lines.append("Bear Case:")
-            detail_lines.append(bear_case)
-            detail_lines.append("")
-
-        if key_risks:
-            detail_lines.append("Key Risks:")
-            # key_risks might be a list or string depending on your implementation
-            if isinstance(key_risks, list):
-                for risk in key_risks:
-                    detail_lines.append(f" - {risk}")
-            else:
-                detail_lines.append(key_risks)
-            detail_lines.append("")
-
-        if final:
-            detail_lines.append(f"Final Stance: {final}")
-            detail_lines.append("")
-
-    summary_block = "\n".join(summary_lines)
-    details_block = "\n".join(detail_lines)
-
-    return summary_block + "\n\n" + details_block
+    print(f"\nVWAP:            {vwap:.2f}" if vwap is not None else "\nVWAP:            Data not available")
+    print(f"PEG Ratio:       {peg:.2f}" if peg is not None else "PEG Ratio:       Data not available")
 
 
 def main():
-    # Tickers from CLI args or default list
-    if len(sys.argv) > 1:
-        tickers = [arg.upper() for arg in sys.argv[1:]]
+    parser = argparse.ArgumentParser(description="Technical analysis CLI for a given stock.")
+    parser.add_argument("ticker", help="Ticker symbol to analyse (e.g. AAPL, MSFT, TSLA)")
+    parser.add_argument("--period", default="6mo", help="History period (e.g. 3mo, 6mo, 1y, 2y). Default: 6mo")
+    parser.add_argument("--interval", default="1d", help="Data interval (e.g. 1d, 1h). Default: 1d")
+
+    args = parser.parse_args()
+    ticker = args.ticker.upper()
+
+    print(f"\n🔍 Fetching technicals for {ticker} (period={args.period}, interval={args.interval})...")
+    summary = get_latest_ta_summary(ticker, period=args.period, interval=args.interval)
+    if summary:
+        print_ta_summary(summary)
     else:
-        tickers = DEFAULT_TICKERS
-
-    print(f"🚀 Running morning report for: {', '.join(tickers)}")
-
-    results: List[Dict[str, Any]] = []
-
-    for ticker in tickers:
-        print(f"🔍 Analysing {ticker} ...")
-
-        # Market snapshot (now uses centralized logic with fallback)
-        snapshot = get_market_snapshot(ticker)
-
-        # Technical analysis summary (using your TA module)
-        try:
-            ta_summary = get_latest_ta_summary(ticker, period="6mo", interval="1d")
-        except Exception as e:
-            print(f"⚠️ Failed to compute TA for {ticker}: {e}")
-            ta_summary = None
-
-        # AI analysis (reuse your existing research agent)
-        try:
-            try:
-                # Newer version that might accept TA as third arg
-                analysis = analyse_stock_with_ai(ticker, snapshot, ta_summary)
-            except TypeError:
-                # Backwards-compatible: older version with only (ticker, snapshot)
-                analysis = analyse_stock_with_ai(ticker, snapshot)
-        except Exception as e:
-            print(f"⚠️ AI analysis failed for {ticker}: {e}")
-            analysis = {
-                "summary": "AI analysis failed.",
-                "bull_case": None,
-                "bear_case": None,
-                "key_risks": None,
-                "final_stance": "watchlist",
-            }
-
-        results.append(
-            {
-                "ticker": ticker,
-                "snapshot": snapshot,
-                "ta_summary": ta_summary,
-                "analysis": analysis,
-            }
-        )
-
-    # Build the email content
-    email_body = build_email_body(results)
-
-    # Subject line with date
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    subject = f"Morning Stock Report - {today_str}"
-
-    # Send email
-    try:
-        send_email(subject, email_body)
-        print("📧 Morning report email sent.")
-    except Exception as e:
-        print(f"❌ Failed to send morning report email: {e}")
-
-    # Optional: print preview to console (truncated)
-    print("\n----- EMAIL BODY PREVIEW (start) -----\n")
-    print("\n".join(email_body.splitlines()[:40]))
-    print("\n----- EMAIL BODY PREVIEW (end) -----\n")
+        print("⚠️ Not enough data to compute TA indicators.")
 
 
 if __name__ == "__main__":
