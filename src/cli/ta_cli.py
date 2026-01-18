@@ -22,6 +22,18 @@ def print_ta_summary(summary: dict):
     bb_upper = summary.get("bb_upper")
     bb_lower = summary.get("bb_lower")
     bb_position = summary.get("bb_position")
+    vwap = summary.get("vwap")
+    peg = summary.get("peg")
+
+    if vwap is not None:
+        print(f"VWAP:             {vwap:.2f}")
+    else:
+        print("VWAP:             Data not available")
+
+    if peg is not None:
+        print(f"PEG Ratio:        {peg:.2f}")
+    else:
+        print("PEG Ratio:        Data not available")
 
     if price is not None:
         print(f"Last Close:      {price:.2f}")
