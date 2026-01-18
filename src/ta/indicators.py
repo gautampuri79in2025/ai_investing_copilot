@@ -3,6 +3,24 @@ import pandas as pd
 import numpy as np
 from typing import Optional, Dict, Any
 
+def _ensure_min_period(period: str, min_days: int = 200) -> str:
+    """
+    Force a longer period if the requested one is too short
+    """
+    period_map = {
+        "3mo": 63,
+        "6mo": 126,
+        "1y": 252,
+        "2y": 504,
+        "5y": 1260,
+        "10y": 2520,
+        "max": 10000,
+    }
+
+    days = period_map.get(period, 0)
+    if days < min_days:
+        return "2y"
+    return period
 
 # ---------------------------------------------------------
 # RSI
@@ -136,10 +154,19 @@ def get_latest_ta_summary(
 ) -> Optional[Dict[str, Any]]:
 
     yf_ticker = yf.Ticker(ticker)
-    df = yf_ticker.history(period=period, interval=interval)
+safe_period = _ensure_min_period(period, min_days=200)
+
+
+df = yf_ticker.history(period=safe_period, interval=interval)
+
+if safe_period != period:
+    print(f"⚠️ Period '{period}' too short for SMA200. Using '{safe_period}' instead.")
 
     if df is None or df.empty:
         return None
+
+    if len(df) < 200:
+    raise ValueError("Not enough data to compute 200-day moving average")
 
     # Work off the Close series
     close = df["Close"].astype(float)
