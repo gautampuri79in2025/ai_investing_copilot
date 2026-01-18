@@ -154,22 +154,20 @@ def get_latest_ta_summary(
 ) -> Optional[Dict[str, Any]]:
 
     yf_ticker = yf.Ticker(ticker)
-safe_period = _ensure_min_period(period, min_days=200)
+    safe_period = _ensure_min_period(period, min_days=200)
 
+    df = yf_ticker.history(period=safe_period, interval=interval)
 
-df = yf_ticker.history(period=safe_period, interval=interval)
+    if safe_period != period:
+        print(f"⚠️ Period '{period}' too short for SMA200. Using '{safe_period}' instead.")
 
-if safe_period != period:
-    print(f"⚠️ Period '{period}' too short for SMA200. Using '{safe_period}' instead.")
+    # Check if data is valid
+    if df is None or df.empty:
+        return None
 
-# Check if data is valid
-if df is None or df.empty:
-    return None
-
-# Ensure enough rows for SMA200
-if len(df) < 200:
-    raise ValueError("Not enough data to compute 200-day moving average")
-
+    # Ensure enough rows for SMA200
+    if len(df) < 200:
+        raise ValueError("Not enough data to compute 200-day moving average")
 
     # Work off the Close series
     close = df["Close"].astype(float)
@@ -228,3 +226,4 @@ if len(df) < 200:
         "sma_trend": sma_trend,
         "overall_trend": overall_trend,
     }
+
