@@ -166,7 +166,7 @@ if safe_period != period:
         return None
 
     if len(df) < 200:
-    raise ValueError("Not enough data to compute 200-day moving average")
+        raise ValueError("Not enough data to compute 200-day moving average")
 
     # Work off the Close series
     close = df["Close"].astype(float)
