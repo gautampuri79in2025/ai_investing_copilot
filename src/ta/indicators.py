@@ -158,6 +158,12 @@ def get_latest_ta_summary(
 
     df = yf_ticker.history(period=safe_period, interval=interval)
 
+    # Compute VWAP
+    vwap = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
+    vwap_val = float(vwap.iloc[-1]) if not vwap.empty else None
+
+    peg_val = ticker_obj.info.get('pegRatio', None)
+
     if safe_period != period:
         print(f"⚠️ Period '{period}' too short for SMA200. Using '{safe_period}' instead.")
 
@@ -214,16 +220,19 @@ def get_latest_ta_summary(
     )
 
     return {
-        "ticker": ticker,
-        "price": price,
-        "rsi": rsi_val,
-        "rsi_signal": rsi_signal,
-        "macd": macd_val,
-        "macd_signal": macd_signal_val,
-        "macd_hist": macd_hist_val,
-        "sma_50": sma50_val,
-        "sma_200": sma200_val,
-        "sma_trend": sma_trend,
-        "overall_trend": overall_trend,
-    }
+    "ticker": ticker,
+    "price": price,
+    "rsi": rsi_val,
+    "rsi_signal": rsi_signal,
+    "macd": macd_val,
+    "macd_signal": macd_signal_val,
+    "macd_hist": macd_hist_val,
+    "sma_50": sma50_val,
+    "sma_200": sma200_val,
+    "sma_trend": sma_trend,
+    "overall_trend": overall_trend,
+    "vwap": vwap_val,
+    "peg": peg_val,
+}
+
 
