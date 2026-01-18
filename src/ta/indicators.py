@@ -162,11 +162,14 @@ df = yf_ticker.history(period=safe_period, interval=interval)
 if safe_period != period:
     print(f"⚠️ Period '{period}' too short for SMA200. Using '{safe_period}' instead.")
 
-    if df is None or df.empty:
-        return None
+# Check if data is valid
+if df is None or df.empty:
+    return None
 
-    if len(df) < 200:
-        raise ValueError("Not enough data to compute 200-day moving average")
+# Ensure enough rows for SMA200
+if len(df) < 200:
+    raise ValueError("Not enough data to compute 200-day moving average")
+
 
     # Work off the Close series
     close = df["Close"].astype(float)
