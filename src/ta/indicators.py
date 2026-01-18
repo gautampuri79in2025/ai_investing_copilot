@@ -147,44 +147,45 @@ def _combine_overall_trend(
 # ---------------------------------------------------------
 # Main TA Summary Function
 # ---------------------------------------------------------
+# --- existing helper functions ---
+# _compute_rsi, _compute_macd, _classify_rsi, _classify_sma_trend, _combine_overall_trend
+# _ensure_min_period should return a string period that guarantees at least `min_days` rows
+
 def get_latest_ta_summary(
     ticker: str,
     period: str = "2y",
     interval: str = "1d",
 ) -> Optional[Dict[str, Any]]:
 
-    yf_ticker = yf.Ticker(ticker)
+    # Initialize ticker object
+    ticker_obj = yf.Ticker(ticker)
+
+    # Ensure period is long enough for SMA200
     safe_period = _ensure_min_period(period, min_days=200)
-
-    df = yf_ticker.history(period=safe_period, interval=interval)
-
-    # Compute VWAP
-    vwap = (df['Close'] * df['Volume']).cumsum() / df['Volume'].cumsum()
-    vwap_val = float(vwap.iloc[-1]) if not vwap.empty else None
-
-    peg_val = ticker_obj.info.get('pegRatio', None)
-
     if safe_period != period:
         print(f"⚠️ Period '{period}' too short for SMA200. Using '{safe_period}' instead.")
 
-    # Check if data is valid
+    # Fetch historical data
+    df = ticker_obj.history(period=safe_period, interval=interval)
     if df is None or df.empty:
         return None
 
-    # Ensure enough rows for SMA200
-    if len(df) < 200:
-        raise ValueError("Not enough data to compute 200-day moving average")
-
-    # Work off the Close series
     close = df["Close"].astype(float)
 
-    # Core indicators
+    # --- Core indicators ---
     rsi_series = _compute_rsi(close, window=14)
     macd_df = _compute_macd(close)
     sma50 = close.rolling(window=50, min_periods=50).mean()
     sma200 = close.rolling(window=200, min_periods=200).mean()
 
-    # Attach indicators
+    # --- VWAP ---
+    vwap_series = (df["Close"] * df["Volume"]).cumsum() / df["Volume"].cumsum()
+    vwap_val = float(vwap_series.iloc[-1]) if not vwap_series.empty else None
+
+    # --- PEG Ratio ---
+    peg_val = ticker_obj.info.get("pegRatio", None)
+
+    # --- Attach indicators ---
     df = df.copy()
     df["rsi"] = rsi_series
     df["sma_50"] = sma50
@@ -193,19 +194,12 @@ def get_latest_ta_summary(
     df["macd_signal"] = macd_df["macd_signal"]
     df["macd_hist"] = macd_df["macd_hist"]
 
-    # Strict filter: require SMA200 too
-    df_clean = df.dropna(
-        subset=["rsi", "sma_50", "sma_200", "macd", "macd_signal"]
-    )
+    # Filter rows with all indicators available
+    df_clean = df.dropna(subset=["rsi", "sma_50", "sma_200", "macd", "macd_signal"])
 
-    # Pick best available row
-    if not df_clean.empty:
-        latest = df_clean.iloc[-1]
-    else:
-        latest = df.iloc[-1]  # fallback
+    latest = df_clean.iloc[-1] if not df_clean.empty else df.iloc[-1]
 
     price = float(latest["Close"])
-
     rsi_val = latest["rsi"] if not pd.isna(latest["rsi"]) else None
     sma50_val = latest["sma_50"] if not pd.isna(latest["sma_50"]) else None
     sma200_val = latest["sma_200"] if not pd.isna(latest["sma_200"]) else None
@@ -215,24 +209,23 @@ def get_latest_ta_summary(
 
     rsi_signal = _classify_rsi(rsi_val)
     sma_trend = _classify_sma_trend(price, sma50_val, sma200_val)
-    overall_trend = _combine_overall_trend(
-        price, sma50_val, sma200_val, macd_val, rsi_val
-    )
+    overall_trend = _combine_overall_trend(price, sma50_val, sma200_val, macd_val, rsi_val)
 
     return {
-    "ticker": ticker,
-    "price": price,
-    "rsi": rsi_val,
-    "rsi_signal": rsi_signal,
-    "macd": macd_val,
-    "macd_signal": macd_signal_val,
-    "macd_hist": macd_hist_val,
-    "sma_50": sma50_val,
-    "sma_200": sma200_val,
-    "sma_trend": sma_trend,
-    "overall_trend": overall_trend,
-    "vwap": vwap_val,
-    "peg": peg_val,
-}
+        "ticker": ticker,
+        "price": price,
+        "rsi": rsi_val,
+        "rsi_signal": rsi_signal,
+        "macd": macd_val,
+        "macd_signal": macd_signal_val,
+        "macd_hist": macd_hist_val,
+        "sma_50": sma50_val,
+        "sma_200": sma200_val,
+        "sma_trend": sma_trend,
+        "overall_trend": overall_trend,
+        "vwap": vwap_val,
+        "peg": peg_val,
+    }
+
 
 
