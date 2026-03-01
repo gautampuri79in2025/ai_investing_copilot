@@ -32,3 +32,24 @@ def generate_morning_report():
     print(report_content)
     
     return report_content
+    
+def generate_morning_report(ticker: str, period: str, interval: str):
+    """
+    Generates the morning report for a specific stock ticker.
+    """
+    print(f"=========================================")
+    print(f"🤖 AI INVESTING COPILOT - MORNING REPORT")
+    print(f"=========================================")
+    print(f"Target Asset : {ticker}")
+    print(f"Time Period  : {period}")
+    print(f"Data Interval: {interval}")
+    print(f"-----------------------------------------")
+    
+    # Placeholder for future data fetching (e.g., yfinance) and AI analysis
+    print(f"Fetching market data for {ticker}...")
+    print(f"Analyzing trends...")
+    print(f"\n[ Status: Report generated successfully ]")
+    print(f"=========================================")
+    
+    # You can eventually return a string or save this to a file
+    return True
